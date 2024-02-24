@@ -1,4 +1,5 @@
 from game import Game
+import uuid
 
 
 class Room:
@@ -8,10 +9,15 @@ class Room:
 
     game: Game
 
-    def __init__(self, name, users):
+    def __init__(self, name):
         self.name = name
-        self.users = users
         self.stage = self.OPEN
+        self.uuid = uuid.uuid4()
+        self.users = []
+
+    def join(self, user):
+        self.users.append(user)
+        user.room = self.uuid
 
     def close(self):
         if all([u.is_ready for u in self.users]):

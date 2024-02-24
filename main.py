@@ -1,5 +1,6 @@
 import json
 
+from action_handler import ActionHandler, Action, MsgType
 from core import handshake, read, send
 from game.user import User
 from http import HTTPStatus
@@ -7,9 +8,8 @@ import asyncio.streams
 import asyncio
 import sys
 import os
-from typing import List
 
-clients: List[User] = []
+action_handler = ActionHandler()
 
 
 async def get_response(writer, path):
@@ -31,54 +31,36 @@ async def get_response(writer, path):
         await writer.drain()
 
 
-async def login(reader, writer):
-    end, data = await read(reader, writer)
-    if end:
-        return writer.close()
-    message = data.decode('utf-8')
+def parse_payload(data):
+    data = data.decode('utf-8')
     try:
-        payload = json.loads(message)
-        if payload['action'] == 'login' and len(payload['data']['username']) > 5:
-            user = User(writer, payload['data']['username'])
-            clients.append(user)
-            print(f'New User: {user.username} on {writer.get_extra_info("peername")}')
-            return
-        await send({"type": "error", "message": "Wrong Credentials"}, writer, clients, broadcast=False)
-        return writer.close()
+        data = json.loads(data)
+        return True, data['action'], data['data']
     except Exception:
-        return writer.close()
-
-
-def remove_client(writer):
-    for i in range(len(clients)):
-        if clients[i].writer == writer:
-            del clients[i]
-            return
+        return False, None, None
 
 
 async def handle_client(reader, writer):
-    address = writer.get_extra_info('peername')
-
     await handshake(reader, writer, get_response)
-    await login(reader, writer)
+    user = await action_handler.login(reader, writer)
+    if user:
+        await action_handler.remove_user(writer)
     if writer.is_closing():
-        remove_client(writer)
         return await writer.wait_closed()
-    print(f"Accepted connection from {address}")
 
     while True:
-        end, data = await read(reader, writer)
+        end, payload = await read(reader, writer)
         if end:
             break
-        message = data.decode('utf-8')
-        print(f'Message from {address}: {message}')
+        valid, action, data = parse_payload(payload)
+        if not valid:
+            await send("Invalid Data Format!", writer, mtype=MsgType.ERROR)
+            continue
+        action_handler.handle(action, data)
 
-        await send(message, writer, clients, broadcast=True)
-        print('Sending Complete!')
-
-    print(f"Connection with {address} closed.")
-    await send(f"Connection with {address} closed.", writer, clients, broadcast=True)
-    remove_client(writer)
+    print(f'User left: {user.username} on {writer.get_extra_info("peername")}')
+    await send(user.uuid, writer, action_handler.get_users(), broadcast=True, mtype=MsgType.USER_LEFT)
+    action_handler.remove_user(writer)
     writer.close()
     await writer.wait_closed()
 

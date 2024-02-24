@@ -50,7 +50,6 @@ def generate_websocket_accept_key(client_key):
 
 
 async def handshake(reader, writer, get_response):
-    print(f'Handshake {writer.get_extra_info("peername")}')
     try:
         request = await asyncio.wait_for(reader.read(4096), timeout=3)
     except asyncio.TimeoutError:
@@ -89,11 +88,8 @@ async def handshake(reader, writer, get_response):
     writer.close()
 
 
-async def send(message: dict | str | bytes, writer, clients, broadcast=False):
-    if type(message) is dict:
-        message = json.dumps(message)
-    if type(message) is str:
-        message = message.encode('utf-8')
+async def send(message, writer, users=(), broadcast=False, send_self=False, mtype=None):
+    message = json.dumps({"type": mtype, "message": message}).encode('utf-8')
 
     # Split the data into chunks with a maximum size of 125 bytes
     chunk_size = 125
@@ -123,12 +119,13 @@ async def send(message: dict | str | bytes, writer, clients, broadcast=False):
             except Exception:
                 pass
             continue
-        for client in clients:
-            if client != writer:
-                print(f'Sending to {client.get_extra_info("peername")}: {message}')
+        for user in users:
+            user = user.writer
+            if user != writer or send_self:
+                print(f'Sending to {user.get_extra_info("peername")}: {message}')
                 try:
-                    client.write(header + chunk)
-                    await client.drain()
+                    user.write(header + chunk)
+                    await user.drain()
                 except asyncio.CancelledError:
                     print("Cancelled")
                 except Exception:
