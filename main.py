@@ -1,11 +1,15 @@
-from core import handshake, read, broadcast
+import json
+
+from core import handshake, read, send
+from game.user import User
 from http import HTTPStatus
 import asyncio.streams
 import asyncio
 import sys
 import os
+from typing import List
 
-clients = []
+clients: List[User] = []
 
 
 async def get_response(writer, path):
@@ -27,13 +31,38 @@ async def get_response(writer, path):
         await writer.drain()
 
 
+async def login(reader, writer):
+    end, data = await read(reader, writer)
+    if end:
+        return writer.close()
+    message = data.decode('utf-8')
+    try:
+        payload = json.loads(message)
+        if payload['action'] == 'login' and len(payload['data']['username']) > 5:
+            user = User(writer, payload['data']['username'])
+            clients.append(user)
+            print(f'New User: {user.username} on {writer.get_extra_info("peername")}')
+            return
+        await send({"type": "error", "message": "Wrong Credentials"}, writer, clients, broadcast=False)
+        return writer.close()
+    except Exception:
+        return writer.close()
+
+
+def remove_client(writer):
+    for i in range(len(clients)):
+        if clients[i].writer == writer:
+            del clients[i]
+            return
+
+
 async def handle_client(reader, writer):
     address = writer.get_extra_info('peername')
-    clients.append(writer)
 
     await handshake(reader, writer, get_response)
+    await login(reader, writer)
     if writer.is_closing():
-        clients.remove(writer)
+        remove_client(writer)
         return await writer.wait_closed()
     print(f"Accepted connection from {address}")
 
@@ -44,12 +73,12 @@ async def handle_client(reader, writer):
         message = data.decode('utf-8')
         print(f'Message from {address}: {message}')
 
-        await broadcast(message + ' Thank you for connection!', writer, clients)
+        await send(message, writer, clients, broadcast=True)
         print('Sending Complete!')
 
     print(f"Connection with {address} closed.")
-    await broadcast(f"Connection with {address} closed.", writer, clients)
-    clients.remove(writer)
+    await send(f"Connection with {address} closed.", writer, clients, broadcast=True)
+    remove_client(writer)
     writer.close()
     await writer.wait_closed()
 

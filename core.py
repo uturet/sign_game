@@ -1,4 +1,5 @@
 import asyncio
+import json
 import struct
 import hashlib
 import base64
@@ -88,15 +89,15 @@ async def handshake(reader, writer, get_response):
     writer.close()
 
 
-async def broadcast(message: str | bytes, writer, clients):
+async def send(message: dict | str | bytes, writer, clients, broadcast=False):
+    if type(message) is dict:
+        message = json.dumps(message)
     if type(message) is str:
-        data = message.encode('utf-8')
-    else:
-        data = message
+        message = message.encode('utf-8')
 
     # Split the data into chunks with a maximum size of 125 bytes
     chunk_size = 125
-    chunks = [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
+    chunks = [message[i:i + chunk_size] for i in range(0, len(message), chunk_size)]
 
     for i, chunk in enumerate(chunks):
         # Set fin for the last frame
@@ -113,10 +114,17 @@ async def broadcast(message: str | bytes, writer, clients):
             header += struct.pack("!BH", 126, len(chunk))
         else:
             header += struct.pack("!BQ", 127, len(chunk))
-
+        if not broadcast:
+            try:
+                writer.write(header + chunk)
+                await writer.drain()
+            except asyncio.CancelledError:
+                print("Cancelled")
+            except Exception:
+                pass
+            continue
         for client in clients:
-            # if client != writer:
-            if True:
+            if client != writer:
                 print(f'Sending to {client.get_extra_info("peername")}: {message}')
                 try:
                     client.write(header + chunk)
