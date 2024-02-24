@@ -1,8 +1,7 @@
 import json
 
-from action_handler import ActionHandler, Action, MsgType
+from action_handler import ActionHandler, MsgType
 from core import handshake, read, send
-from game.user import User
 from http import HTTPStatus
 import asyncio.streams
 import asyncio
@@ -43,9 +42,10 @@ def parse_payload(data):
 async def handle_client(reader, writer):
     await handshake(reader, writer, get_response)
     user = await action_handler.login(reader, writer)
-    if user:
-        await action_handler.remove_user(writer)
+
     if writer.is_closing():
+        if user:
+            await action_handler.remove_user(writer)
         return await writer.wait_closed()
 
     while True:
@@ -56,7 +56,7 @@ async def handle_client(reader, writer):
         if not valid:
             await send("Invalid Data Format!", writer, mtype=MsgType.ERROR)
             continue
-        action_handler.handle(action, data)
+        await action_handler.handle(user, action, data)
 
     print(f'User left: {user.username} on {writer.get_extra_info("peername")}')
     await send(user.uuid, writer, action_handler.get_users(), broadcast=True, mtype=MsgType.USER_LEFT)

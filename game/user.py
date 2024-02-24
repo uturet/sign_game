@@ -14,7 +14,7 @@ class User:
     def __init__(self, writer, username):
         self.writer = writer
         self.username = username
-        self.uuid = uuid.uuid4()
+        self.uuid = str(uuid.uuid4())
 
     def set_room(self, room_name):
         self.room = room_name
@@ -34,6 +34,7 @@ class User:
     def get_broadcast(self):
         return {
             "username": self.username,
-            "is_ready": self.is_ready,
+            "isReady": self.is_ready,
+            "uuid": self.uuid,
         }
 

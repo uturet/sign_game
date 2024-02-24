@@ -10,9 +10,14 @@ import random
 
 class MsgType:
     LOGIN = 0
-    USER_JOIN = 1
-    USER_LEFT = 2
-    ERROR = 3
+    LOGIN_ERROR = 1
+    USER_JOIN = 2
+    USER_LEFT = 3
+    ERROR = 4
+    ROOM_CREATED = 5
+    ROOM_UPDATED = 6
+    ROOM_DELETED = 7
+    ROOM_JOINED = 8
 
 
 class Action:
@@ -24,16 +29,15 @@ class Action:
 class ActionHandler:
     users: List[User]
     rooms: List[Room]
-    actions: Tuple[Any]
+    actions: dict
 
-    def __init__(self, user):
-        self.user = user
+    def __init__(self):
         self.users = []
         self.rooms = []
-        self.actions = (
-            self.action_create_room,
-            self.action_change_room,
-        )
+        self.actions = {
+            1: self.action_create_room,
+            2: self.action_change_room,
+        }
 
     def add_user(self, user: User):
         self.users.append(user)
@@ -41,15 +45,15 @@ class ActionHandler:
     def get_users(self):
         return self.users
 
-    async def remove_user(self, writer):
+    def remove_user(self, writer):
         for i in range(len(self.users)):
             if self.users[i].writer == writer:
-                await send(self.users[i].uuid, writer, self.users, broadcast=True, mtype=MsgType.USER_LEFT)
                 del self.users[i]
                 return
 
-    def handle(self, action, data):
-        self.actions[action](data)
+    async def handle(self, user, action, data):
+        print(user.uuid, action, data)
+        await self.actions[action](user, data)
 
     async def login(self, reader, writer):
         end, data = await read(reader, writer)
@@ -58,27 +62,36 @@ class ActionHandler:
         message = data.decode('utf-8')
         try:
             payload = json.loads(message)
-            if payload['action'] == Action.LOGIN and len(payload['data']['username']) > 5:
+            if payload['action'] == Action.LOGIN and len(payload['data']['username']) > 4:
                 user = User(writer, payload['data']['username'])
                 self.add_user(user)
                 print(f'New User: {user.username} on {writer.get_extra_info("peername")}')
                 await send(
-                    {"self": user.get_broadcast(), "users": [u.get_broadcast() for u in self.users]},
+                    {
+                        "self": user.get_broadcast(),
+                        "users": [u.get_broadcast() for u in self.users],
+                        "rooms": [r.get_broadcast() for r in self.rooms],
+                    },
                     writer, mtype=MsgType.LOGIN)
                 await send(user.get_broadcast(), writer, self.users, broadcast=True,
                            mtype=MsgType.USER_JOIN)
                 return user
-            await send("Wrong Credentials", writer, mtype=MsgType.ERROR)
+            await send("Wrong Credentials", writer, mtype=MsgType.LOGIN_ERROR)
             return writer.close()
-        except Exception:
+        except Exception as e:
+            print(e)
             return writer.close()
 
     async def action_create_room(self, user: User, data):
         name = '#' + ''.join(random.choices(ascii_uppercase, k=10))
         room = Room(name)
         self.rooms.append(room)
-        await self.remove_user(user)
+        self.remove_user(user)
         room.join(user)
+
+        await send({"users": [user.get_broadcast()], "room": room.get_broadcast()}, user.writer, mtype=MsgType.ROOM_JOINED)
+        await send(user.uuid, user.writer, self.users, broadcast=True, mtype=MsgType.USER_LEFT)
+        await send(room.get_broadcast(), user.writer, self.users, broadcast=True, mtype=MsgType.ROOM_CREATED)
         await send(user.get_broadcast(), user.writer, room.users, broadcast=True, mtype=MsgType.USER_JOIN)
 
     async def action_change_room(self, user: User, data):

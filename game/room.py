@@ -1,4 +1,4 @@
-from game import Game
+from game.game import Game
 import uuid
 
 
@@ -12,7 +12,7 @@ class Room:
     def __init__(self, name):
         self.name = name
         self.stage = self.OPEN
-        self.uuid = uuid.uuid4()
+        self.uuid = str(uuid.uuid4())
         self.users = []
 
     def join(self, user):
@@ -34,3 +34,10 @@ class Room:
 
     def get_game(self):
         return self.game
+
+    def get_broadcast(self):
+        return {
+            'usersCount': len(self.users),
+            'name': self.name,
+            'uuid': self.uuid
+        }
