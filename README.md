@@ -5,7 +5,7 @@ Implemented WebSocket protocol with socket library in Python and created a web p
 
 The purpose was to understand deeply how protocols work over TCP.
 
-[Software Demo Video](https://youtu.be/Nqh7iw0pFfI)
+[Software Demo Video](https://youtu.be/CGQVrqDCdXk)
 
 # Network Communication
 The application uses client-server architecture with TCP protocol on a 9999 port.
