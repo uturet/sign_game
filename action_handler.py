@@ -45,10 +45,12 @@ class ActionHandler:
     def get_users(self):
         return self.users
 
-    def remove_user(self, writer):
-        for i in range(len(self.users)):
-            if self.users[i].writer == writer:
-                del self.users[i]
+    def remove_user(self, writer, users=None):
+        if users is None:
+            users = self.users
+        for i in range(len(users)):
+            if users[i].writer == writer:
+                del users[i]
                 return
 
     async def handle(self, user, action, data):
@@ -89,20 +91,30 @@ class ActionHandler:
         self.remove_user(user)
         room.join(user)
 
-        await send({"users": [user.get_broadcast()], "room": room.get_broadcast()}, user.writer, mtype=MsgType.ROOM_JOINED)
+        await send({"users": [user.get_broadcast()], "room": room.uuid}, user.writer, mtype=MsgType.ROOM_JOINED)
         await send(user.uuid, user.writer, self.users, broadcast=True, mtype=MsgType.USER_LEFT)
         await send(room.get_broadcast(), user.writer, self.users, broadcast=True, mtype=MsgType.ROOM_CREATED)
         await send(user.get_broadcast(), user.writer, room.users, broadcast=True, mtype=MsgType.USER_JOIN)
 
     async def action_change_room(self, user: User, data):
-        room_users = self.users
-        prev_room_users = self.users
-        for r in self.rooms:
-            if r.uuid == user.room:
-                prev_room_users = r.users
-            if r.uuid == data:
-                room_users = r.users
+        try:
+            room_users = self.users
+            prev_room_users = self.users
+            room_id = ''
+            for r in self.rooms:
+                if r.uuid == data:
+                    prev_room_users = r.users
+                if r.uuid == data:
+                    room_users = r.users
+                    room_id = r.uuid
 
-        await self.remove_user(prev_room_users)
-        room_users.join(user)
-        await send(user.get_broadcast(), user.writer, room_users, broadcast=True, mtype=MsgType.USER_JOIN)
+            self.remove_user(user.writer, users=prev_room_users)
+            room_users.append(user)
+
+
+            await send(user.uuid, user.writer, self.users, broadcast=True, mtype=MsgType.USER_LEFT)
+            await send(user.uuid, user.writer, self.users, broadcast=True, mtype=MsgType.ROOM_UPDATED)
+            await send({"users": [u.get_broadcast() for u in room_users], "room": room_id}, user.writer, mtype=MsgType.ROOM_JOINED)
+            await send(user.get_broadcast(), user.writer, room_users, broadcast=True, mtype=MsgType.USER_JOIN)
+        except Exception as e:
+            print(e)
