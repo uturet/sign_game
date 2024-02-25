@@ -15,6 +15,7 @@ class User:
         self.writer = writer
         self.username = username
         self.uuid = str(uuid.uuid4())
+        self.room = ''
 
     def set_room(self, room_name):
         self.room = room_name

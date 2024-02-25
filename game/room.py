@@ -16,8 +16,16 @@ class Room:
         self.users = []
 
     def join(self, user):
-        self.users.append(user)
-        user.room = self.uuid
+        if user not in self.users:
+            self.users.append(user)
+            user.room = self.uuid
+            return True
+
+    def leave(self, user):
+        for i in range(len(self.users)):
+            if self.users[i].writer == user.writer:
+                del self.users[i]
+                return True
 
     def close(self):
         if all([u.is_ready for u in self.users]):

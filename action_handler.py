@@ -38,6 +38,9 @@ class ActionHandler:
             1: self.action_create_room,
             2: self.action_change_room,
         }
+        self.empty_room = Room('')
+        self.empty_room.uuid = ''
+        self.empty_room.users = self.users
 
     def add_user(self, user: User):
         self.users.append(user)
@@ -45,12 +48,10 @@ class ActionHandler:
     def get_users(self):
         return self.users
 
-    def remove_user(self, writer, users=None):
-        if users is None:
-            users = self.users
-        for i in range(len(users)):
-            if users[i].writer == writer:
-                del users[i]
+    def remove_user(self, writer):
+        for i in range(len(self.users)):
+            if self.users[i].writer == writer:
+                del self.users[i]
                 return
 
     async def handle(self, user, action, data):
@@ -64,7 +65,7 @@ class ActionHandler:
         message = data.decode('utf-8')
         try:
             payload = json.loads(message)
-            if payload['action'] == Action.LOGIN and len(payload['data']['username']) > 4:
+            if payload['action'] == Action.LOGIN and len(payload['data']['username']) > 0:
                 user = User(writer, payload['data']['username'])
                 self.add_user(user)
                 print(f'New User: {user.username} on {writer.get_extra_info("peername")}')
@@ -88,33 +89,37 @@ class ActionHandler:
         name = '#' + ''.join(random.choices(ascii_uppercase, k=10))
         room = Room(name)
         self.rooms.append(room)
-        self.remove_user(user)
+        self.remove_user(user.writer)
         room.join(user)
 
-        await send({"users": [user.get_broadcast()], "room": room.uuid}, user.writer, mtype=MsgType.ROOM_JOINED)
+        await send({"users": [user.get_broadcast()], "rooms": [], "room": room.name}, user.writer, mtype=MsgType.ROOM_JOINED)
         await send(user.uuid, user.writer, self.users, broadcast=True, mtype=MsgType.USER_LEFT)
         await send(room.get_broadcast(), user.writer, self.users, broadcast=True, mtype=MsgType.ROOM_CREATED)
         await send(user.get_broadcast(), user.writer, room.users, broadcast=True, mtype=MsgType.USER_JOIN)
 
     async def action_change_room(self, user: User, data):
         try:
-            room_users = self.users
-            prev_room_users = self.users
-            room_id = ''
+            old_room = self.empty_room
+            new_room = self.empty_room
             for r in self.rooms:
                 if r.uuid == data:
-                    prev_room_users = r.users
-                if r.uuid == data:
-                    room_users = r.users
-                    room_id = r.uuid
+                    new_room = r
+                if r.uuid == user.room:
+                    old_room = r
 
-            self.remove_user(user.writer, users=prev_room_users)
-            room_users.append(user)
+            join = new_room.join(user)
+            leave = old_room.leave(user)
+            user.room = data
+            rooms = []
+            if new_room.uuid == '':
+                rooms = [r.get_broadcast() for r in self.rooms]
 
+            print(f'{join} {leave} New room {len(new_room.uuid)} {len(new_room.users)} Old room {len(old_room.uuid)} {len(old_room.users)}')
 
-            await send(user.uuid, user.writer, self.users, broadcast=True, mtype=MsgType.USER_LEFT)
-            await send(user.uuid, user.writer, self.users, broadcast=True, mtype=MsgType.ROOM_UPDATED)
-            await send({"users": [u.get_broadcast() for u in room_users], "room": room_id}, user.writer, mtype=MsgType.ROOM_JOINED)
-            await send(user.get_broadcast(), user.writer, room_users, broadcast=True, mtype=MsgType.USER_JOIN)
+            await send(user.uuid, user.writer, old_room.users, broadcast=True, mtype=MsgType.USER_LEFT)
+            await send(new_room.get_broadcast(), user.writer, old_room.users, broadcast=True, mtype=MsgType.ROOM_UPDATED)
+            await send(old_room.get_broadcast(), user.writer, new_room.users, broadcast=True, mtype=MsgType.ROOM_UPDATED)
+            await send({"users": [u.get_broadcast() for u in new_room.users], "rooms": rooms, "room": new_room.name}, user.writer, mtype=MsgType.ROOM_JOINED)
+            await send(user.get_broadcast(), user.writer, new_room.users, broadcast=True, mtype=MsgType.USER_JOIN)
         except Exception as e:
             print(e)
